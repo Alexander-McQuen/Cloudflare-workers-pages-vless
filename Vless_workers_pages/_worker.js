@@ -43,7 +43,9 @@ let PT11 = '2083'
 let PT12 = '2087'
 let PT13 = '2096'
 
-let proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
+// Cache variables to avoid re-computation
+let cachedUserID = userID;
+let cachedProxyIP = proxyIPs[0];
 
 if (!isValidUUID(userID)) {
   throw new Error("uuid is not valid");
@@ -58,35 +60,22 @@ export default {
    */
   async fetch(request, env, ctx) {
     try {
-      userID = env.uuid || userID;
-      proxyIP = env.proxyip || proxyIP;
-      CDNIP = env.cdnip || CDNIP;
-	  IP1 = env.ip1 || IP1;
-	  IP2 = env.ip2 || IP2;
-	  IP3 = env.ip3 || IP3;
-	  IP4 = env.ip4 || IP4;
-	  IP5 = env.ip5 || IP5;
-	  IP6 = env.ip6 || IP6;
-	  IP7 = env.ip7 || IP7;
-	  IP8 = env.ip8 || IP8;
-	  IP9 = env.ip9 || IP9;
-	  IP10 = env.ip10 || IP10;
-	  IP11 = env.ip11 || IP11;
-	  IP12 = env.ip12 || IP12;
-	  IP13 = env.ip13 || IP13;
-	  PT1 = env.pt1 || PT1;
-	  PT2 = env.pt2 || PT2;
-	  PT3 = env.pt3 || PT3;
-	  PT4 = env.pt4 || PT4;
-	  PT5 = env.pt5 || PT5;
-	  PT6 = env.pt6 || PT6;
-	  PT7 = env.pt7 || PT7;
-	  PT8 = env.pt8 || PT8;
-	  PT9 = env.pt9 || PT9;
-	  PT10 = env.pt10 || PT10;
-	  PT11 = env.pt11 || PT11;
-	  PT12 = env.pt12 || PT12;
-	  PT13 = env.pt13 || PT13;
+      // Use environment variables or fall back to cached values
+      const currentUserID = env.uuid || cachedUserID;
+      const currentProxyIP = env.proxyip || cachedProxyIP;
+      const currentCDNIP = env.cdnip || CDNIP;
+      const IPs = [
+        env.ip1 || IP1, env.ip2 || IP2, env.ip3 || IP3, env.ip4 || IP4,
+        env.ip5 || IP5, env.ip6 || IP6, env.ip7 || IP7, env.ip8 || IP8,
+        env.ip9 || IP9, env.ip10 || IP10, env.ip11 || IP11, env.ip12 || IP12,
+        env.ip13 || IP13
+      ];
+      const PTs = [
+        env.pt1 || PT1, env.pt2 || PT2, env.pt3 || PT3, env.pt4 || PT4,
+        env.pt5 || PT5, env.pt6 || PT6, env.pt7 || PT7, env.pt8 || PT8,
+        env.pt9 || PT9, env.pt10 || PT10, env.pt11 || PT11, env.pt12 || PT12,
+        env.pt13 || PT13
+      ];
       const upgradeHeader = request.headers.get("Upgrade");
       const url = new URL(request.url);
       if (!upgradeHeader || upgradeHeader !== "websocket") {
@@ -192,17 +181,16 @@ export default {
             return proxyResponse;
         }
       } else {
-			if(url.pathname.includes('/pyip='))
-			{
-				const tmp_ip=url.pathname.split("=")[1];
-				if(isValidIP(tmp_ip))
-				{
-					proxyIP=tmp_ip;
-				}
-				
-			}
-        return await vlessOverWSHandler(request);
-		}
+        // Handle WebSocket upgrade with optional custom proxy IP from path
+        let currentProxyIPForRequest = currentProxyIP;
+        if(url.pathname.includes('/pyip=')) {
+          const tmp_ip = url.pathname.split("=")[1];
+          if(isValidIP(tmp_ip)) {
+            currentProxyIPForRequest = tmp_ip;
+          }
+        }
+        return await vlessOverWSHandler(request, currentProxyIPForRequest);
+      }
     } catch (err) {
       /** @type {Error} */ let e = err;
       return new Response(e.toString());
@@ -219,7 +207,7 @@ function isValidIP(ip) {
  *
  * @param {import("@cloudflare/workers-types").Request} request
  */
-async function vlessOverWSHandler(request) {
+async function vlessOverWSHandler(request, proxyIP) {
   /** @type {import("@cloudflare/workers-types").WebSocket[]} */
   // @ts-ignore
   const webSocketPair = new WebSocketPair();
@@ -303,7 +291,8 @@ async function vlessOverWSHandler(request) {
             rawClientData,
             webSocket,
             vlessResponseHeader,
-            log
+            log,
+            proxyIP
           );
         },
         close() {
@@ -365,8 +354,10 @@ async function handleTCPOutBound(
   rawClientData,
   webSocket,
   vlessResponseHeader,
-  log
+  log,
+  proxyIP
 ) {
+
   async function connectAndWrite(address, port) {
     if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(address)) address = `${atob('d3d3Lg==')}${address}${atob('LnNzbGlwLmlv')}`;
     /** @type {import("@cloudflare/workers-types").Socket} */
